@@ -1,0 +1,226 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8" />
+<meta name="viewport" content="width=device-width,initial-scale=1" />
+<title>RTJ Breathwork Trainer</title>
+<style>
+:root { --inhale:#66b3ff; --hold:#99e6ff; --exhale:#66ffcc; --after:#e6fff9; --text:#222; --accent:#005fa3; }
+body { font-family: Inter, system-ui, sans-serif; background: linear-gradient(180deg,#dff3ff,#fff); color:var(--text); display:flex; flex-direction:column; align-items:center; min-height:100vh; padding:1rem; }
+h1 { color: var(--accent); margin-bottom:.5rem; }
+section { background:#fff; border-radius:1rem; padding:1rem; margin:.5rem; box-shadow:0 2px 6px rgba(0,0,0,.1); width:min(95%,460px); }
+.preset label { font-weight:600; }
+.breath-bar { height:24px; background:#eef; border-radius:12px; overflow:hidden; margin-bottom:.5rem; }
+#breathFill { height:100%; width:0; background:var(--accent); transition: width .3s linear; }
+.sliders { display:flex; flex-direction:column; gap:.5rem; }
+label { font-size:.95rem; display:flex; justify-content:space-between; align-items:center; gap:.5rem; }
+label span { min-width:3rem; text-align:right; opacity:.8; }
+.controls { display:flex; gap:.5rem; justify-content:center; margin-top:.5rem; flex-wrap:wrap; }
+button { background:var(--accent); color:#fff; border:none; padding:.55rem 1rem; border-radius:.6rem; cursor:pointer; }
+.feedback h3 { margin:.4rem 0 .2rem; }
+.feedback p { min-height:1.2em; margin:.3rem 0; }
+.co2 p { margin:.3rem 0; font-weight:600; }
+#phaseLabel { font-weight:700; text-align:center; margin:.35rem 0; }
+#presetInfo { margin:.4rem 0; opacity:.85; }
+</style>
+</head>
+<body>
+  <h1>🌬 RTJ Breathwork Trainer</h1>
+
+  <!-- Presets -->
+  <section class="preset">
+    <label for="presetSelect">Choose a pattern:</label>
+    <select id="presetSelect">
+      <option value="nasal">Nasal Reset (4-2-6-2)</option>
+      <option value="box">Box Breath (4-4-4-4)</option>
+      <option value="co2">CO₂ Builder (4-2-8-0)</option>
+      <option value="release">Diaphragm Release (5-0-7-2)</option>
+      <option value="custom">Custom</option>
+    </select>
+    <p id="presetInfo">Select a breathing pattern to begin.</p>
+  </section>
+
+  <!-- Breath cycle -->
+  <section class="breath">
+    <div class="breath-bar"><div id="breathFill"></div></div>
+    <p id="phaseLabel">Ready</p>
+    <div class="sliders">
+      <label>Inhale
+        <input type="range" id="inhale" min="2" max="10" value="4" />
+        <span id="inhaleVal">4 s</span>
+      </label>
+      <label>Hold
+        <input type="range" id="hold" min="0" max="10" value="2" />
+        <span id="holdVal">2 s</span>
+      </label>
+      <label>Exhale
+        <input type="range" id="exhale" min="2" max="12" value="6" />
+        <span id="exhaleVal">6 s</span>
+      </label>
+      <label>Hold-after
+        <input type="range" id="after" min="0" max="10" value="2" />
+        <span id="afterVal">2 s</span>
+      </label>
+    </div>
+    <div class="controls">
+      <button id="startBtn">▶️ Start</button>
+      <button id="stopBtn">⏹ Stop</button>
+      <button id="resetBtn">🔁 Reset</button>
+    </div>
+  </section>
+
+  <!-- Feedback -->
+  <section class="feedback">
+    <h3>Cycle Feedback</h3>
+    <p id="cycleFeedback">—</p>
+    <h3>CO₂ Feedback</h3>
+    <p id="co2Feedback">—</p>
+  </section>
+
+  <!-- CO₂ test -->
+  <section class="co2">
+    <h2>CO₂ Tolerance Test</h2>
+    <div class="controls">
+      <button id="startHold">Start Hold</button>
+      <button id="stopHold">Stop</button>
+    </div>
+    <p id="holdTimer">0.0 s</p>
+  </section>
+
+<script>
+document.addEventListener("DOMContentLoaded", () => {
+  // Elements
+  const fill = document.getElementById("breathFill");
+  const phaseLabel = document.getElementById("phaseLabel");
+  const cycleBox = document.getElementById("cycleFeedback");
+  const co2Box = document.getElementById("co2Feedback");
+  const presetSelect = document.getElementById("presetSelect");
+  const presetInfo = document.getElementById("presetInfo");
+
+  const sliders = ["inhale","hold","exhale","after"];
+  const getVal = id => Number(document.getElementById(id).value);
+  const setVal = (id, v) => { const s=document.getElementById(id); const t=document.getElementById(id+"Val"); s.value=v; t.textContent = v+" s"; };
+
+  const presets = {
+    nasal:   { times:[4,2,6,2], info:"Gentle nasal breathing builds nitric oxide and calms the system." },
+    box:     { times:[4,4,4,4], info:"Even 4-4-4-4 pattern for focus and balance." },
+    co2:     { times:[4,2,8,0], info:"Longer exhale builds CO₂ tolerance and parasympathetic strength." },
+    release: { times:[5,0,7,2], info:"Soft belly expansion; relaxes the diaphragm." }
+  };
+
+  // Preset -> sliders
+  presetSelect.addEventListener("change", () => {
+    const key = presetSelect.value;
+    if (presets[key]) {
+      const t = presets[key].times;
+      setVal("inhale", t[0]); setVal("hold", t[1]); setVal("exhale", t[2]); setVal("after", t[3]);
+      presetInfo.textContent = presets[key].info;
+    } else {
+      presetInfo.textContent = "Set your own custom timings.";
+    }
+  });
+
+  // Slider readouts
+  sliders.forEach(id => {
+    const s = document.getElementById(id);
+    const v = document.getElementById(id+"Val");
+    s.addEventListener("input", () => v.textContent = s.value + " s");
+  });
+
+  // Phase engine
+  const phases = ["Inhale","Hold","Exhale","Hold-after"];
+  const colors = ["var(--inhale)","var(--hold)","var(--exhale)","var(--after)"];
+  let running = false, phaseIndex = 0, timerId = null;
+
+  const startBtn = document.getElementById("startBtn");
+  const stopBtn  = document.getElementById("stopBtn");
+  const resetBtn = document.getElementById("resetBtn");
+
+  startBtn.addEventListener("click", () => {
+    if (running) return;
+    running = true; phaseIndex = 0;
+    nextPhase();
+  });
+
+  stopBtn.addEventListener("click", () => {
+    running = false; clearTimeout(timerId);
+  });
+
+  resetBtn.addEventListener("click", () => {
+    running = false; clearTimeout(timerId);
+    fill.style.transition = "width .2s linear";
+    fill.style.width = "0%";
+    phaseLabel.textContent = "Ready";
+    cycleBox.textContent = "—";
+  });
+
+  function nextPhase() {
+    if (!running) return;
+    const durations = [getVal("inhale"), getVal("hold"), getVal("exhale"), getVal("after")];
+    const ms = durations[phaseIndex] * 1000;
+
+    phaseLabel.textContent = phases[phaseIndex];
+    fill.style.background = colors[phaseIndex];
+    animate(ms, phaseIndex);
+
+    timerId = setTimeout(() => {
+      phaseIndex = (phaseIndex + 1) % phases.length;
+      if (phaseIndex === 0) giveFeedback(durations);
+      nextPhase();
+    }, ms);
+  }
+
+  function animate(ms, idx) {
+    // Smooth width animation for inhale/exhale; holds keep width steady
+    fill.style.transition = `width ${ms/1000}s linear`;
+    if (phases[idx] === "Inhale")  fill.style.width = "100%";
+    if (phases[idx] === "Exhale")  fill.style.width = "0%";
+    if (phases[idx] === "Hold" || phases[idx] === "Hold-after") {
+      // keep current width (no change)
+      const current = fill.style.width || "0%";
+      fill.style.width = current;
+    }
+  }
+
+  // RTJ feedback after each full cycle
+  function giveFeedback(dur) {
+    const total = dur.reduce((a,b)=>a+b,0);
+    let msg;
+    if (total > 16)       msg = "🛡 Shield thickening — slow, steady rhythm.";
+    else if (total > 10)  msg = "🌿 Balanced cycle — system centred.";
+    else                  msg = "⚡ Thermometer rising — lengthen your exhale.";
+    cycleBox.textContent = msg;
+  }
+
+  // CO₂ hold
+  const holdTimerEl = document.getElementById("holdTimer");
+  const startHoldBtn = document.getElementById("startHold");
+  const stopHoldBtn  = document.getElementById("stopHold");
+  let holdRAF = null, holdStart = 0;
+
+  startHoldBtn.addEventListener("click", () => {
+    cancelAnimationFrame(holdRAF);
+    holdStart = performance.now();
+    holdTimerEl.textContent = "0.0 s";
+    tickHold();
+  });
+
+  stopHoldBtn.addEventListener("click", () => {
+    cancelAnimationFrame(holdRAF);
+    const secs = parseFloat(holdTimerEl.textContent);
+    let msg;
+    if (secs > 25)      msg = "🛡 High CO₂ tolerance — shield strong.";
+    else if (secs > 15) msg = "🌿 Good control — steady progress.";
+    else                msg = "⚡ Quick gasp — try longer exhales tomorrow.";
+    co2Box.textContent = msg;
+  });
+
+  function tickHold() {
+    const secs = (performance.now() - holdStart) / 1000;
+    holdTimerEl.textContent = secs.toFixed(1) + " s";
+    holdRAF = requestAnimationFrame(tickHold);
+  }
+});
+</script>
+</body>
+</html>
